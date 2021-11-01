@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 plexapi = "*"
+psutil = "*"
 
 [dev-packages]
 
