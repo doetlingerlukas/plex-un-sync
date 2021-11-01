@@ -10,3 +10,6 @@ plexapi = "*"
 
 [requires]
 python_version = "3.9"
+
+[scripts]
+un-sync = "python ./un-sync.py"
