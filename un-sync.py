@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from plexapi.server import PlexServer
+import psutil
 
 plex_url = os.getenv('PLEX_URL')
 plex_token = os.getenv('PLEX_TOKEN')
@@ -38,19 +39,34 @@ def plex_paths(plex):
 
 # Ensure `count` replicas of `file_path` exist across all `replica_root_paths`.
 def ensure_replicas(replica_root_paths, file_path, count):
+  replica_root_paths_with_file = []
+  replica_root_paths_without_file = []
   current_count = 0
 
   for replica_root_path in replica_root_paths:
     if replica_root_path.join(file_path).exists():
+      replica_root_paths_with_file.push(replica_root_path)
       current_count += 1
 
       # File already has the required number of replicas.
       if current_count >= count:
         return
+    else:
+      replica_root_paths_without_file.push(replica_root_path)
 
   # Skip missing files.
   if current_count == 0:
     return
+
+  replica_root_paths_without_file.sort(key=lambda path: psutil.disk_usage(path).free, reverse=True)
+
+  additional_needed_replicas = count - current_count
+  src = replica_root_paths_with_file[0]/file_path
+  for replica_root_path_without_file in replica_root_paths_without_file[..additional_needed_replicas]:
+    dst = replica_root_path_without_file/file_path
+
+    print(f"cp '{src}' '{dst}'")
+    continue
 
   return
 
