@@ -112,8 +112,8 @@ else:
   def ismergerfs(dir):
     return False
 
-def run():
-  dry_run = True
+def main():
+  dry_run = os.getenv('DRY_RUN', 'false') == 'true'
 
   source_dir_raw = os.path.realpath(os.getenv('SOURCE_DIR'))
   source_dir = Path(source_dir_raw)
@@ -146,4 +146,4 @@ def run():
       pass
 
 if __name__ == '__main__':
-  run()
+  main()
