@@ -3,7 +3,7 @@ import os
 import sys
 import importlib
 from pathlib import Path
-from distutils.spawn import find_executable
+from shutil import which
 from plexapi.server import PlexServer
 import subprocess
 import shlex
@@ -97,7 +97,7 @@ def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
 
   return
 
-mergerfs_dup_path = find_executable('mergerfs.dup')
+mergerfs_dup_path = which('mergerfs.dup')
 if mergerfs_dup_path:
   module_name = 'mergerfs_dup'
   spec = importlib.util.spec_from_loader(
