@@ -1,8 +1,12 @@
 import filecmp
 import os
+import sys
+import importlib
 from pathlib import Path
-
+from distutils.spawn import find_executable
 from plexapi.server import PlexServer
+import subprocess
+import shlex
 import psutil
 
 plex_url = os.getenv('PLEX_URL')
@@ -16,9 +20,6 @@ watched_replicas = 1
 WATCHED_REPLICAS = int(os.getenv('WATCHED_REPLICAS', '1'))
 UNWATCHED_REPLICAS = int(os.getenv('UNWATCHED_REPLICAS', '2'))
 LOCATION_PREFIX = Path(os.getenv('LOCATION_PREFIX', ''))
-
-SOURCE_DIR = Path(os.getenv('SOURCE_DIR'))
-REPLICA_DIRS = [Path(dir) for dir in os.getenv('REPLICA_DIRS').split(':')]
 
 # Get a dictionary containing all movie and season paths and their watched status.
 def plex_paths(plex):
@@ -41,8 +42,15 @@ def plex_paths(plex):
 
   return paths
 
-# Ensure `count` replicas of `file_path` exist across all `replica_dirs`.
-def ensure_replicas(source_dir, replica_dirs, file_path, count):
+def execute_cmd(args):
+  return subprocess.call(args)
+
+def print_args(args):
+    quoted = [shlex.quote(arg) for arg in args]
+    print(' '.join(quoted))
+
+# Ensure `count` replicas of `relative_path` exist across all `replica_dirs`.
+def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
   replica_dirs_up_to_date = []
   replica_dirs_outdated = []
   current_count = 0
@@ -50,10 +58,10 @@ def ensure_replicas(source_dir, replica_dirs, file_path, count):
   for replica_dir in replica_dirs:
     needs_update = False
 
-    if not (replica_dir/file_path).exists():
+    if not (replica_dir/relative_path).exists():
       needs_update = True
     else:
-      diff = filecmp.dircmp(source_dir/file_path, replica_dir/file_path)
+      diff = filecmp.dircmp(source_dir/relative_path, replica_dir/relative_path)
 
       if diff.left_only or diff.right_only or diff.diff_files:
         needs_update = True
@@ -75,29 +83,67 @@ def ensure_replicas(source_dir, replica_dirs, file_path, count):
   replica_dirs_outdated.sort(key=lambda path: psutil.disk_usage(path).free, reverse=True)
 
   additional_needed_replicas = count - current_count
-  src = replica_dirs_up_to_date[0]/file_path
+  src = replica_dirs_up_to_date[0]/'.'/relative_path
   for replica_dir_without_file in replica_dirs_outdated[:additional_needed_replicas]:
-    dst = replica_dir_without_file/file_path
+    dst = replica_dir_without_file/relative_path
+    dst = f"{replica_dir_without_file}/"
 
-    print(f"cp -R '{src}' '{dst}'")
+    args = ['rsync', '-avHAXWE', '--numeric-ids', '--progress', '--relative', src, dst]
+
+    print_args(args)
+    if not dry_run:
+      execute_cmd(args)
     continue
 
   return
 
-def run(source_dir, replica_dirs):
+mergerfs_dup_path = find_executable('mergerfs.dup')
+if mergerfs_dup_path:
+  module_name = 'mergerfs_dup'
+  spec = importlib.util.spec_from_loader(
+    module_name,
+    importlib.machinery.SourceFileLoader(module_name, mergerfs_dup_path)
+  )
+  module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  sys.modules[module_name] = module
+  from mergerfs_dup import ismergerfs
+else:
+  def ismergerfs(dir):
+    return False
+
+def run():
+  dry_run = True
+
+  source_dir_raw = os.path.realpath(os.getenv('SOURCE_DIR'))
+  source_dir = Path(source_dir_raw)
+
+  use_mergerfs_dup = False
+  replica_dirs = None
+  if ismergerfs(source_dir_raw):
+    use_mergerfs_dup = True
+  else:
+    replica_dirs = [Path(dir) for dir in os.getenv('REPLICA_DIRS').split(':')]
+
   for (path, watched) in plex_paths(plex).items():
     if path.is_relative_to(LOCATION_PREFIX):
       relative_path = path.relative_to(LOCATION_PREFIX)
-      print(relative_path, watched)
+      # print(relative_path, watched)
 
       if not (source_dir/relative_path).exists():
-        print(f"Skipping path '{path}'; does not exist in root directory.")
+        # print(f"Skipping path '{path}'; does not exist in root directory.")
         continue
 
       replica_count = WATCHED_REPLICAS if watched else UNWATCHED_REPLICAS
-      ensure_replicas(source_dir, replica_dirs, relative_path, replica_count)
+
+      if use_mergerfs_dup:
+        execute = [] if dry_run else ['--execute']
+        execute_cmd([mergerfs_dup_path, '--count', str(replica_count), source_dir/relative_path] + execute)
+      else:
+        ensure_replicas(source_dir, replica_dirs, relative_path, replica_count, dry_run)
     else:
-      print(f"Skipping path '{path}'; not relative to `LOCATION_PREFIX`.")
+      # print(f"Skipping path '{path}'; not relative to `LOCATION_PREFIX`.")
+      pass
 
 if __name__ == '__main__':
-  run(SOURCE_DIR, REPLICA_DIRS)
+  run()
