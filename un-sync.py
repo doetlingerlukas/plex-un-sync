@@ -8,18 +8,19 @@ from plexapi.server import PlexServer
 import subprocess
 import shlex
 import psutil
+import re
 
 plex_url = os.getenv('PLEX_URL')
 plex_token = os.getenv('PLEX_TOKEN')
 
 plex = PlexServer(plex_url, plex_token)
 
-unwatched_replicas = 2
-watched_replicas = 1
+watched_replicas = 0
+unwatched_replicas = 1
 
-WATCHED_REPLICAS = int(os.getenv('WATCHED_REPLICAS', '1'))
-UNWATCHED_REPLICAS = int(os.getenv('UNWATCHED_REPLICAS', '2'))
-LOCATION_PREFIX = Path(os.getenv('LOCATION_PREFIX', ''))
+WATCHED_REPLICAS = int(os.getenv('WATCHED_REPLICAS', '0'))
+UNWATCHED_REPLICAS = int(os.getenv('UNWATCHED_REPLICAS', '1'))
+LOCATION_PREFIX = Path(os.getenv('LOCATION_PREFIX', '/'))
 
 # Get a dictionary containing all movie and season paths and their watched status.
 def plex_paths(plex):
@@ -46,8 +47,25 @@ def execute_cmd(args):
   return subprocess.call(args)
 
 def print_args(args):
-    quoted = [shlex.quote(arg) for arg in args]
-    print(' '.join(quoted))
+  quoted = [shlex.quote(arg) for arg in args]
+  print(' '.join(quoted))
+
+def is_remote_replica(replica_dir):
+  return re.match('[^\s]+@.*', str(replica_dir))
+
+def exists_replica(replica_dir, relative_path, is_remote = False):
+  if is_remote:
+    host = str(replica_dir).split(':')
+
+    status = execute_cmd(['ssh', host[0], f"test -f {shlex.quote(str(Path(host[1])/relative_path))}"])
+    if status == 0:
+      return True
+    elif status == 1:
+      return False
+    else:
+      raise Exception('ssh failed')
+  else:
+    return (replica_dir/relative_path).exists()
 
 # Ensure `count` replicas of `relative_path` exist across all `replica_dirs`.
 def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
@@ -55,10 +73,15 @@ def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
   replica_dirs_outdated = []
   current_count = 0
 
+  # Skip if replica not required
+  if count == 0:
+    return
+
   for replica_dir in replica_dirs:
+    is_remote = is_remote_replica(replica_dir)
     needs_update = False
 
-    if not (replica_dir/relative_path).exists():
+    if not exists_replica(replica_dir, relative_path, is_remote):
       needs_update = True
     else:
       diff = filecmp.dircmp(source_dir/relative_path, replica_dir/relative_path)
@@ -76,19 +99,15 @@ def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
       if current_count >= count:
         return
 
-  # Skip missing files.
-  if current_count == 0:
-    return
-
-  replica_dirs_outdated.sort(key=lambda path: psutil.disk_usage(path).free, reverse=True)
+  # replica_dirs_outdated.sort(key=lambda path: psutil.disk_usage(path).free, reverse=True)
 
   additional_needed_replicas = count - current_count
-  src = replica_dirs_up_to_date[0]/'.'/relative_path
+  src = source_dir/relative_path
   for replica_dir_without_file in replica_dirs_outdated[:additional_needed_replicas]:
     dst = replica_dir_without_file/relative_path
     dst = f"{replica_dir_without_file}/"
 
-    args = ['rsync', '-avHAXWE', '--numeric-ids', '--progress', '--relative', src, dst]
+    args = ['rsync', '-avHAXWE', '--numeric-ids', '--progress', '--relative', str(src), str(dst)]
 
     print_args(args)
     if not dry_run:
@@ -123,7 +142,7 @@ def main():
   if ismergerfs(source_dir_raw):
     use_mergerfs_dup = True
   else:
-    replica_dirs = [Path(dir) for dir in os.getenv('REPLICA_DIRS').split(':')]
+    replica_dirs = [Path(dir) for dir in os.getenv('REPLICA_DIRS').split(';')]
 
   for (path, watched) in plex_paths(plex).items():
     if path.is_relative_to(LOCATION_PREFIX):
@@ -131,7 +150,7 @@ def main():
       # print(relative_path, watched)
 
       if not (source_dir/relative_path).exists():
-        # print(f"Skipping path '{path}'; does not exist in root directory.")
+        print(f"Skipping path '{path}'; does not exist in root directory.")
         continue
 
       replica_count = WATCHED_REPLICAS if watched else UNWATCHED_REPLICAS
