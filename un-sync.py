@@ -53,8 +53,8 @@ def print_args(args):
 def is_remote_replica(replica_dir):
   return re.match('[^\s]+@.*', str(replica_dir))
 
-def exists_replica(replica_dir, relative_path, is_remote = False):
-  if is_remote:
+def replica_exists(replica_dir, relative_path):
+  if is_remote_replica(replica_dir):
     host = str(replica_dir).split(':')
 
     status = execute_cmd(['ssh', host[0], f"test -f {shlex.quote(str(Path(host[1])/relative_path))}"])
@@ -67,45 +67,52 @@ def exists_replica(replica_dir, relative_path, is_remote = False):
   else:
     return (replica_dir/relative_path).exists()
 
+def replica_dir_size(replica_dir):
+  if is_remote_replica(replica_dir):
+    host = str(replica_dir).split(':')
+
+    result = subprocess.run(['ssh', host[0], f"df --output=avail {host[1]}"], stdout = subprocess.PIPE)
+    search = re.search('(.*)([0-9+])(.*)', result.stdout.decode('utf-8'))
+    result_str = search.group(1) if search else '0'
+    print(result_str)
+    return int(result_str)
+  else:
+    return psutil.disk_usage(replica_dir).free
+
 # Ensure `count` replicas of `relative_path` exist across all `replica_dirs`.
 def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
-  replica_dirs_up_to_date = []
-  replica_dirs_outdated = []
-  current_count = 0
+  used_replica_dirs = []
+  unused_replica_dirs = []
 
   # Skip if replica not required
   if count == 0:
     return
 
   for replica_dir in replica_dirs:
-    is_remote = is_remote_replica(replica_dir)
-    needs_update = False
-
-    if not exists_replica(replica_dir, relative_path, is_remote):
-      needs_update = True
+    if replica_exists(replica_dir, relative_path):
+      used_replica_dirs.append(replica_dir)
     else:
-      diff = filecmp.dircmp(source_dir/relative_path, replica_dir/relative_path)
+      unused_replica_dirs.append(replica_dir)
 
-      if diff.left_only or diff.right_only or diff.diff_files:
-        needs_update = True
+  used_replica_dirs.sort(key=lambda path: replica_dir_size(path), reverse=True)
+  unused_replica_dirs.sort(key=lambda path: replica_dir_size(path), reverse=True)
 
-    if needs_update:
-      replica_dirs_outdated.append(replica_dir)
-    else:
-      replica_dirs_up_to_date.append(replica_dir)
-      current_count += 1
+  replica_dirs_to_update = []
+  replica_dirs_to_delete = []
 
-      # File already has the required number of replicas.
-      if current_count >= count:
-        return
+  if count < len(used_replica_dirs):
+    diff = len(used_replica_dirs) - count
+    replica_dirs_to_delete.extend(used_replica_dirs[:diff])
+    replica_dirs_to_update.delete(used_replica_dirs[diff:])
+  else:
+    replica_dirs_to_update.extend(used_replica_dirs)
+    additional_needed_replicas = count - len(used_replica_dirs)
+    replica_dirs_to_update.extend(unused_replica_dirs[:additional_needed_replicas])
 
-  # replica_dirs_outdated.sort(key=lambda path: psutil.disk_usage(path).free, reverse=True)
 
-  additional_needed_replicas = count - current_count
   src = source_dir/relative_path
-  for replica_dir_without_file in replica_dirs_outdated[:additional_needed_replicas]:
-    dst = replica_dir_without_file/relative_path
-    dst = f"{replica_dir_without_file}/"
+  for replica_dir in replica_dirs_to_update:
+    dst = f"{replica_dir}/"
 
     args = ['rsync', '-avHAXWE', '--numeric-ids', '--progress', '--relative', str(src), str(dst)]
 
@@ -113,6 +120,10 @@ def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
     if not dry_run:
       execute_cmd(args)
     continue
+
+  for replica_dir in replica_dirs_to_delete:
+    dst = replica_dir/relative_path
+    print(f"Replica {dst} is unused and should be deleted.")
 
   return
 
