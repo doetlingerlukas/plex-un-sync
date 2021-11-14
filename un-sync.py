@@ -63,7 +63,7 @@ def exists_replica(replica_dir, relative_path, is_remote = False):
     elif status == 1:
       return False
     else:
-      raise Exception('ssh failed')
+      raise Exception(f"ssh failed with status {status}")
   else:
     return (replica_dir/relative_path).exists()
 
