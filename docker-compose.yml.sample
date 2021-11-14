@@ -1,0 +1,21 @@
+version: "3"
+services:
+  plex-un-sync:
+    build: .
+    container_name: plex-un-sync
+    environment:
+      - PLEX_URL=http://plex.local:32400
+      - PLEX_TOKEN=XXXXXXXXXXXXXXXXXXXXX
+      - SOURCE_DIR=/media
+      - REPLICA_DIRS=/media-1;/media-2;user@host:/media-3
+      - DRY_RUN=true
+    volumes:
+      - tv_volume:/media/tv:ro
+      - /movies:/media/movies:ro
+
+volumes:
+  tv_volume:
+    driver_opts:
+      type: cifs
+      o: "username=<username>,password=<password>"
+      device: "//share.local/tv"
