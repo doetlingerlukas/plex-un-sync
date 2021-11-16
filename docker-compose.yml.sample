@@ -10,6 +10,7 @@ services:
       - REPLICA_DIRS=/media-1;/media-2;user@host:/media-3
       - DRY_RUN=true
     volumes:
+      - ~/.ssh:/secrets:ro
       - tv_volume:/media/tv:ro
       - /movies:/media/movies:ro
 
