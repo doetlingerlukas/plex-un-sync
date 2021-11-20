@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Publish Docker Image
 
 on:
   push:
@@ -11,10 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
 
-    - uses: actions/checkout@v2
     - name: Docker meta
       id: meta
       uses: docker/metadata-action@v3
@@ -35,3 +32,10 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Docker Hub Description
+      uses: peter-evans/dockerhub-description@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USER }}
+        password: ${{ secrets.DOCKERHUB_PASS }}
+        repository: doetlingerlukas/plex-un-sync
