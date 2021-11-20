@@ -6,6 +6,7 @@ RUN apk update \
   musl-dev \
   openssh-client \
   sshpass \
+  rsync \
   && pip install pipenv
 
 COPY . /app
