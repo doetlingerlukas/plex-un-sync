@@ -7,10 +7,15 @@ RUN apk update \
   openssh-client \
   sshpass \
   rsync \
-  && pip install pipenv
+  tzdata \
+  && pip install pipenv \
+  yacron
 
 COPY . /app
 WORKDIR /app
+
+ENV TZ=Europe/Vienna
+RUN cp /usr/share/zoneinfo/$TZ /etc/localtime
 
 RUN addgroup -S group && adduser -S user -G group
 RUN mkdir -p /home/user/.ssh

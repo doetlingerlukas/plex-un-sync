@@ -9,6 +9,7 @@ services:
       - SOURCE_DIR=/media
       - REPLICA_DIRS=/media-1;/media-2;user@host:/media-3
       - DRY_RUN=true
+      - SCHEDULE=0 0 * * *
     volumes:
       - ~/.ssh:/secrets:ro
       - tv_volume:/media/tv:ro
