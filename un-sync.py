@@ -15,12 +15,9 @@ plex_token = os.getenv('PLEX_TOKEN')
 
 plex = PlexServer(plex_url, plex_token)
 
-watched_replicas = 0
-unwatched_replicas = 1
-
-WATCHED_REPLICAS = int(os.getenv('WATCHED_REPLICAS', '0'))
-UNWATCHED_REPLICAS = int(os.getenv('UNWATCHED_REPLICAS', '1'))
-LOCATION_PREFIX = Path(os.getenv('LOCATION_PREFIX', '/'))
+WATCHED_REPLICAS = int(os.getenv('WATCHED_REPLICAS', '1'))
+UNWATCHED_REPLICAS = int(os.getenv('UNWATCHED_REPLICAS', '2'))
+LOCATION_PREFIX = Path(os.getenv('LOCATION_PREFIX'))
 
 # Get a dictionary containing all movie and season paths and their watched status.
 def plex_paths(plex):
@@ -85,7 +82,7 @@ def ensure_replicas(source_dir, replica_dirs, relative_path, count, dry_run):
   unused_replica_dirs = []
 
   # Skip if replica not required
-  if count == 0:
+  if count <= 1:
     return
 
   for replica_dir in replica_dirs:
@@ -156,7 +153,7 @@ def main():
     replica_dirs = [Path(dir) for dir in os.getenv('REPLICA_DIRS').split(';')]
 
   for (path, watched) in plex_paths(plex).items():
-    if path.is_relative_to(LOCATION_PREFIX):
+    if LOCATION_PREFIX and path.is_relative_to(LOCATION_PREFIX):
       relative_path = path.relative_to(LOCATION_PREFIX)
       # print(relative_path, watched)
 
