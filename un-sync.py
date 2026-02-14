@@ -165,7 +165,7 @@ def main():
 
       if use_mergerfs_dup:
         execute = [] if dry_run else ['--execute']
-        execute_cmd([mergerfs_dup_path, '--count', str(replica_count), source_dir/relative_path] + execute)
+        execute_cmd([mergerfs_dup_path, '--count', str(replica_count), '--prune', source_dir/relative_path] + execute)
       else:
         ensure_replicas(source_dir, replica_dirs, relative_path, replica_count, dry_run)
     else:
